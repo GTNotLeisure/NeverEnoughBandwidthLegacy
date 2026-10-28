@@ -573,11 +573,7 @@ public class CompressionProbe {
             0L);
     }
 
-    /**
-     * Measures one continuous codec stream after restoring stored packet length prefixes.
-     * Compressed records keep their captured channel-indexed payload, so the result isolates
-     * frame and small-packet overhead without pretending to reverse the channel index.
-     */
+    /** Measures one continuous codec stream with stored packet lengths restored. */
     private static void reportDatasetAggregate(Scenario scenario, List<Frame> frames, Options options, int iteration,
         StringBuilder output) {
         Frame aggregate = aggregateFrame(frames);

@@ -4,7 +4,7 @@
     {
       "modid": "${modId}",
       "name": "${modName}",
-      "description": "Aggregates the Minecraft packet stream into compressed frames, cutting bandwidth without touching any mod's own packet code. Ships a /neb report command that exports the measurement as HTML and CSV.",
+      "description": "Aggregates the Minecraft packet stream into compressed frames.",
       "version": "${modVersion}",
       "mcversion": "${minecraftVersion}",
       "url": "https://github.com/ABKQPO/NeverEnoughBandwidthLegacy",

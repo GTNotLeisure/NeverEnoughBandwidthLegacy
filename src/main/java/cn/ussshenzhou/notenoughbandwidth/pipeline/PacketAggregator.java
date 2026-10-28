@@ -81,8 +81,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
                 emit(ctx);
             }
             if (message instanceof ByteBuf passed) {
-                // Still measured, so the reported ratio covers the whole stream rather than only
-                // the part that happened to be compressible.
+                // Include bypassed frames in the stream totals.
                 int size = passed.readableBytes() + NebVarInt.sizeOf(passed.readableBytes());
                 record(size, size, 1);
                 DatasetRecorder.global()
@@ -401,9 +400,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
             NebVarInt.write(frame, rawSize);
             ByteBuffer source = payload.nioBuffer();
             ByteBuffer destination = frame.nioBuffer(frame.writerIndex(), bound);
-            // Some ByteBuf implementations hand back their internal buffer positioned at the
-            // requested index rather than a zero-based slice, so the only portable way to learn
-            // how much the codec wrote is to diff the position.
+            // Measure the bytes written from the view's initial position.
             int before = destination.position();
             codec.compress(source, destination);
             frame.writerIndex(frame.writerIndex() + (destination.position() - before));
@@ -422,10 +419,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
             return frame;
         }
         frame.release();
-        // The compressed stream already consumed this batch, so the decoder history of the peer can
-        // no longer match ours. Dropping our context and announcing the reset on the next frame is
-        // only worth it while the history is still cheap; a warm stream is more valuable than the
-        // few bytes an incompressible frame overshoots by.
+        // Reset state after a stateful frame that did not compress.
         if (type.stateful()) {
             session.resetOutboundCodec();
             pendingContextReset = true;
@@ -435,15 +429,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
         return null;
     }
 
-    /**
-     * Shortens the mod channel name of every custom payload in the buffered payload.
-     * <p>
-     * Only frames that really go out are indexed, because a definition the peer never receives
-     * would desynchronise its table. The scan runs first so a payload with no custom payload in
-     * it, which is most of them, costs nothing but a walk.
-     *
-     * @return a rewritten payload the caller owns, or {@code null} to use the original
-     */
+    /** Rewrites custom payload channel names in the buffered payload. */
     private ByteBuf indexChannels(ChannelHandlerContext ctx, ByteBuf payload) {
         int payloadId = payloadLookup.idOf(
             ctx.channel()

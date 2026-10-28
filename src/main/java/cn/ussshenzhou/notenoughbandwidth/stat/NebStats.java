@@ -1,14 +1,6 @@
 package cn.ussshenzhou.notenoughbandwidth.stat;
 
-/**
- * Side-wide totals, summed over every connection this process has had.
- * <p>
- * Per-connection numbers live on the session instead, so the server report can name the player who
- * is costing the most bandwidth. Packet kind attribution is only kept here, because "which packet
- * dominates the stream" is a property of the installation, not of one player.
- *
- * @author USS_Shenzhou
- */
+/** Side-wide totals for all connections. */
 public class NebStats {
 
     private static final TrafficStats TRAFFIC = new TrafficStats();

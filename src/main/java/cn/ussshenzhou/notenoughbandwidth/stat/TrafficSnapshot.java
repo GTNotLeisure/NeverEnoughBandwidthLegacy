@@ -148,9 +148,7 @@ public class TrafficSnapshot {
         return safeAdd(outboundWireBytes, inboundWireBytes);
     }
 
-    /**
-     * @return average packets merged into one outbound frame, the aggregation win on its own
-     */
+    /** @return average packets merged into one outbound frame */
     public double outboundPacketsPerFrame() {
         return outboundFrames == 0 ? 0.0D : (double) outboundPackets / outboundFrames;
     }

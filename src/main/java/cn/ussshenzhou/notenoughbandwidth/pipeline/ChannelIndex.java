@@ -31,12 +31,7 @@ public class ChannelIndex {
         }
     }
 
-    /**
-     * Rewrites one encoded packet body, shortening its channel name to a token.
-     *
-     * @param customPayloadId the packet id custom payloads use in this direction
-     * @return a new buffer the caller owns, or {@code null} when the body is left alone
-     */
+    /** Rewrites one encoded custom payload body with its channel token. */
     public ByteBuf encode(ByteBufAllocator allocator, ByteBuf body, int customPayloadId) {
         ByteBuf view = body.duplicate();
         if (!startsWithCustomPayload(view, customPayloadId)) {
@@ -75,11 +70,7 @@ public class ChannelIndex {
         }
     }
 
-    /**
-     * Restores the channel name a token stands for, producing the body Minecraft expects.
-     *
-     * @return a new buffer the caller owns, or {@code null} when the body is left alone
-     */
+    /** Restores the channel name in one encoded custom payload body. */
     public ByteBuf decode(ByteBufAllocator allocator, ByteBuf body, int customPayloadId) {
         ByteBuf view = body.duplicate();
         if (!startsWithCustomPayload(view, customPayloadId)) {

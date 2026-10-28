@@ -210,10 +210,7 @@ public class NebSession {
             peerLabel);
     }
 
-    /**
-     * Starts compressing what we send. Safe to call from any thread and more than once; the switch
-     * itself happens on the event loop, strictly between two frames.
-     */
+    /** Enables outbound compression. */
     public void enableOutbound(PacketCodecType type, int peerProtocol) {
         if (type == null) {
             throw new IllegalArgumentException("NEB: outbound codec must not be null");

@@ -232,8 +232,7 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
         try {
             ByteBuffer from = source.nioBuffer();
             ByteBuffer to = raw.nioBuffer(raw.writerIndex(), rawSize);
-            // See the matching note in PacketAggregator: the position a ByteBuf's nio view starts
-            // at is implementation defined, so measure the codec's output as a difference.
+            // Measure the codec output from the view's initial position.
             int before = to.position();
             codec.decompress(from, to);
             if (to.position() - before != rawSize) {
@@ -284,7 +283,7 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
                 if (rawBytes > Integer.MAX_VALUE) {
                     throw new CorruptedFrameException("NEB: expanded packet data is too large");
                 }
-                // Profiled after the channel name is back, so the report names the mod rather than a token.
+                // Profile after restoring the channel name.
                 if (protocol != null) {
                     NebStats.inboundProfile()
                         .record(

@@ -17,17 +17,6 @@ public class ReportSnapshot {
     private final List<PacketKindSample> inbound;
     private final List<SessionSample> sessions;
 
-    /**
-     * @param takenAtMillis           wall clock time the snapshot was taken
-     * @param side                    {@code "server"} or {@code "client"}
-     * @param codec                   the backend this side prefers
-     * @param codecDetail             human readable description of that backend
-     * @param aggregationWindowMillis the configured hold-back window, for context
-     * @param traffic                 side-wide totals
-     * @param outbound                heaviest outgoing packet kinds, heaviest first
-     * @param inbound                 heaviest incoming packet kinds, heaviest first
-     * @param sessions                live connections
-     */
     public ReportSnapshot(long takenAtMillis, String side, String codec, String codecDetail,
         int aggregationWindowMillis, TrafficSnapshot traffic, List<PacketKindSample> outbound,
         List<PacketKindSample> inbound, List<SessionSample> sessions) {

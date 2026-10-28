@@ -153,9 +153,6 @@ public class ReportCsvWriter {
         return total;
     }
 
-    /**
-     * Kept here so the chat summary and the CSV cannot drift apart.
-     */
     public static String ratioText(long rawBytes, long wireBytes) {
         return ByteSize.formatRatio(rawBytes, wireBytes);
     }

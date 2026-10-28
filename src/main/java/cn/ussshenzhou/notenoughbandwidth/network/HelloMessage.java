@@ -127,9 +127,7 @@ public class HelloMessage implements IMessage {
                 }
                 agreed = proposal;
             } else {
-                // The server decides for both directions. A client that cannot honour the choice
-                // falls back to sending nothing compressed rather than picking for itself, because
-                // the two sides guessing separately is exactly how the stream desynchronises.
+                // The server-selected codec applies in both directions.
                 agreed = message.selectedCodec();
                 if (agreed == null || !PacketCodecRegistry.isAvailable(agreed)
                     || (message.capabilityMask() & 1 << agreed.wireId()) == 0) {
