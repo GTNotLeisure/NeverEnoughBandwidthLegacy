@@ -11,7 +11,7 @@ Minecraft 1.7.10 的网络包优化 MOD，旨在改善服务器带宽受限时�
 
 | GTNH 版本 | Mod 版本 | 状态      | 下载                                                                                                                                    |
 |-----------|----------|-----------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| 2.9.0 RC2 | 1.0.0+   | ✅ 维护中 | [![Latest](https://img.shields.io/badge/Download-Latest-success)](https://github.com/ABKQPO/NeverEnoughBandwidthLegacy/releases/latest) |
+| 2.9.0+    | 1.0.3+   | ✅ 维护中 | [![Latest](https://img.shields.io/badge/Download-Latest-success)](https://github.com/ABKQPO/NeverEnoughBandwidthLegacy/releases/latest) |
 
 ## 统计界面
 
@@ -39,15 +39,16 @@ Forge 1.7.10 缺少新版 NeoForge 的统一 payload 类型与 codec 注册表�
 
 将短时间内的小包合并压缩发送，让多个包共享压缩开销，默认聚合窗口为 20 毫秒；使用流压缩时，极小批次可适当延长等待，以改善压缩效率。
 
-通过 `NetworkManager` 和 Forge `NetworkDispatcher` 的生命周期钩子安装管线，`PacketAggregator` 收集原版 `MessageSerializer` 已编码的包体，写入 `NebFrame` 聚合帧；接收端的 `PacketExpander` 在 `MessageDeserializer2` 拆帧后解压、还原通道名，再将各个包体交回原版包解码器。
+通过 `NetworkManager` 和 Forge `NetworkDispatcher` 的生命周期钩子安装管线，`PacketAggregator` 收集原版 `MessageSerializer` 已编码的包体，压缩为 `NebFrame` 聚合帧；`PluginMessageFrame` 将聚合帧和字典更新封装为 `NEB|Frame` 通道上的标准 `CustomPayload` 包。接收端的 `PacketExpander` 在 `MessageDeserializer2` 拆帧后重组分片、解压、还原通道名，再将各个包体交回原版包解码器。
 
 > [!NOTE]
-> 普通压缩聚合帧结构如下；下方第二行展示压缩前的子包布局：
+> 每个标准消息携带 NEB 帧的一个分片，最后一行展示压缩前的子包布局：
 >
 > ```text
-> +---+---+---+-------------------------------------+
-> | S | H | R |          compressed data            |
-> +---+---+---+-------------------------------------+
+> | S | P | C | L | T | O | fragment |
+>
+> Reassembled NEB frame:
+> | H | R | compressed data |
 >
 >             +----+----+----+----+----+----+-----+
 >             | s0 | p0 | d0 | s1 | p1 | d1 | ... |
@@ -56,6 +57,10 @@ Forge 1.7.10 缺少新版 NeoForge 的统一 payload 类型与 codec 注册表�
 > ```
 >
 > - `S`：VarInt，外层帧长度，不含 `S` 自身。
+> - `P`：当前方向注册的原版 `CustomPayload` 包 ID。
+> - `C`：VarInt 字节长度及 UTF-8 通道名 `NEB|Frame`。
+> - `L`：两字节 payload 长度，严格小于 32767，不使用 Forge 扩展长度。
+> - `T`、`O`：VarInt，分别表示完整 NEB 帧的字节数和当前分片的字节偏移。
 > - `H`：1 字节，NEB 帧标记、压缩后端及上下文重置标志。
 > - `R`：VarInt，压缩前聚合数据的字节数，通道索引替换已在此之前完成。
 > - `s`：VarInt，当前子包的 `p + d` 总字节数。
@@ -128,6 +133,8 @@ Forge 1.7.10 缺少新版 NeoForge 的统一 payload 类型与 codec 注册表�
 ### unaggregatedChannels、unaggregatedPacketTypes
 
 指定直接沿用原版路径、不参与聚合压缩的通道名称和包类名。默认绕过通道为 `FML|HS`、`REGISTER`、`UNREGISTER`、`MC|Brand`；包类型支持完整类名或简单类名，默认包含部分实体、移动、聊天等对延迟敏感的包。
+
+上述列表不能移除强制的代理可见规则。`NEB`、`NEB|Frame`、`FML`、`FML|HS`、`REGISTER`、`UNREGISTER`、`BungeeCord` 和 `MC|*` 控制通道始终绕过压缩。
 
 > [!NOTE]
 > 绕过包会先触发缓冲内容发送，以保持顺序；绕过规则过多或命中频繁时，会降低聚合效率。修改这两个列表需要重启。

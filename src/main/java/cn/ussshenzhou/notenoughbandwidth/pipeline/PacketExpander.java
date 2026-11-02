@@ -17,7 +17,9 @@ import cn.ussshenzhou.notenoughbandwidth.codec.PacketCodec;
 import cn.ussshenzhou.notenoughbandwidth.codec.PacketCodecRegistry;
 import cn.ussshenzhou.notenoughbandwidth.codec.PacketCodecType;
 import cn.ussshenzhou.notenoughbandwidth.config.NebConfig;
+import cn.ussshenzhou.notenoughbandwidth.pipeline.PluginMessageAssembler.DecodedFrame;
 import cn.ussshenzhou.notenoughbandwidth.session.NebSession;
+import cn.ussshenzhou.notenoughbandwidth.session.NebSession.PeerReset;
 import cn.ussshenzhou.notenoughbandwidth.stat.NebStats;
 import cn.ussshenzhou.notenoughbandwidth.stat.PacketKindResolver;
 import cn.ussshenzhou.notenoughbandwidth.util.ByteSize;
@@ -37,6 +39,7 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
     private final PacketKindResolver resolver = new PacketKindResolver();
     private final ChannelIndex channelIndex = new ChannelIndex();
     private final CustomPayloadLookup payloadLookup = new CustomPayloadLookup();
+    private final PluginMessageAssembler assembler = new PluginMessageAssembler();
     private final Deque<ByteBuf> pendingFrames = new ArrayDeque<>();
     private Runnable negotiationListener;
     private long pendingBytes;
@@ -58,16 +61,34 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
             negotiationListener = null;
         }
         releasePending();
+        assembler.clear();
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         releasePending();
+        assembler.clear();
         super.channelInactive(ctx);
     }
 
     @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object event) throws Exception {
+        if (event == PeerReset.INSTANCE) {
+            releasePending();
+            assembler.clear();
+            channelIndex.clear();
+        }
+        super.userEventTriggered(ctx, event);
+    }
+
+    @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf frame, List<Object> out) {
+        BiMap<Integer, Class<? extends Packet>> protocol = ctx.channel()
+            .attr(NetworkManager.attrKeyReceivable)
+            .get();
+        if (ProxyPacketPolicy.resetsClientSession(frame, protocol, payloadLookup)) {
+            session.resetPeer();
+        }
         if (session.negotiated() && !pendingFrames.isEmpty()) {
             if (!drainPending(ctx)) {
                 return;
@@ -87,17 +108,31 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
 
     private void process(ChannelHandlerContext ctx, ByteBuf frame, List<Object> out) {
         int wireSize = frame.readableBytes() + NebVarInt.sizeOf(frame.readableBytes());
-        boolean knownVanillaPacket = isKnownVanillaPacket(ctx, frame);
-        if (!knownVanillaPacket && DictionaryFrame.matches(frame)) {
-            session.installInboundDictionary(DictionaryFrame.decode(frame));
-            record(0, wireSize, 0);
+        int payloadId = payloadLookup.idOf(
+            ctx.channel()
+                .attr(NetworkManager.attrKeyReceivable)
+                .get());
+        if (!PluginMessageFrame.matches(frame, payloadId)) {
+            forwardStored(frame, wireSize, out);
             return;
         }
-        if (NebFrame.isNebFrame(frame) && !knownVanillaPacket) {
-            expandNebFrame(ctx, frame, wireSize, out);
+        DecodedFrame decoded = assembler.accept(ctx.alloc(), frame, payloadId);
+        if (decoded == null) {
             return;
         }
-        forwardStored(frame, wireSize, out);
+        ByteBuf payload = decoded.payload();
+        try {
+            if (DictionaryFrame.matches(payload)) {
+                session.installInboundDictionary(DictionaryFrame.decode(payload));
+                record(0, decoded.wireBytes(), 0);
+            } else if (NebFrame.isNebFrame(payload)) {
+                expandNebFrame(ctx, payload, decoded.wireBytes(), out);
+            } else {
+                throw new CorruptedFrameException("NEB: unknown encapsulated frame");
+            }
+        } finally {
+            payload.release();
+        }
     }
 
     private void forwardStored(ByteBuf frame, int wireSize, List<Object> out) {
@@ -108,7 +143,12 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
     }
 
     private boolean shouldDefer(ChannelHandlerContext ctx, ByteBuf frame) {
-        return !isKnownVanillaPacket(ctx, frame) && (DictionaryFrame.matches(frame) || NebFrame.isNebFrame(frame));
+        return PluginMessageFrame.matches(
+            frame,
+            payloadLookup.idOf(
+                ctx.channel()
+                    .attr(NetworkManager.attrKeyReceivable)
+                    .get()));
     }
 
     private void defer(ByteBuf frame) {
@@ -311,22 +351,6 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
 
     private static long safeAdd(long left, long right) {
         return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
-    }
-
-    private static boolean isKnownVanillaPacket(ChannelHandlerContext ctx, ByteBuf frame) {
-        BiMap<Integer, Class<? extends Packet>> receivable = ctx.channel()
-            .attr(NetworkManager.attrKeyReceivable)
-            .get();
-        if (receivable == null || receivable.isEmpty()) {
-            return false;
-        }
-        NebVarInt.Cursor cursor = new NebVarInt.Cursor();
-        int start = frame.readerIndex();
-        cursor.at(start);
-        if (!NebVarInt.readAt(frame, cursor) || cursor.index - start != NebVarInt.sizeOf(cursor.value)) {
-            return false;
-        }
-        return receivable.containsKey(cursor.value);
     }
 
     private int validatePackets(ByteBuf raw) {

@@ -18,6 +18,7 @@ import cn.ussshenzhou.notenoughbandwidth.NebLog;
 import cn.ussshenzhou.notenoughbandwidth.codec.PacketCodec;
 import cn.ussshenzhou.notenoughbandwidth.codec.PacketCodecRegistry;
 import cn.ussshenzhou.notenoughbandwidth.codec.PacketCodecType;
+import cn.ussshenzhou.notenoughbandwidth.pipeline.PluginMessageFrame;
 import cn.ussshenzhou.notenoughbandwidth.util.NebVarInt;
 
 public class DatasetAnalyzer {
@@ -141,7 +142,7 @@ public class DatasetAnalyzer {
                 byte[] payload = record.copyPayload();
                 int compressed = compress(codec, payload);
                 int frameBytes = compressed + 1 + NebVarInt.sizeOf(payload.length);
-                wireBytes = safeAdd(wireBytes, (long) frameBytes + NebVarInt.sizeOf(frameBytes));
+                wireBytes = safeAdd(wireBytes, PluginMessageFrame.wireSize(frameBytes));
             }
             return new DatasetAnalysis.CodecResult(outbound, type, rawBytes, wireBytes, records.size(), packetCount);
         } finally {

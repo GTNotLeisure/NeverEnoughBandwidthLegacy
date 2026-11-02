@@ -88,6 +88,9 @@ public class HelloMessage implements IMessage {
                 NebLog.warn("A NEB hello arrived on a connection with no session; staying uncompressed.");
                 return null;
             }
+            if (!serverSide && message.selectedCodecWireId < 0 && session.negotiated()) {
+                session.resetPeer();
+            }
             if (message.protocolVersion() != ModConstants.PROTOCOL_VERSION) {
                 NebLog.warn(
                     "{} speaks NEB protocol {} but this side speaks {}, staying uncompressed.",
@@ -98,7 +101,7 @@ public class HelloMessage implements IMessage {
             }
             session.configurePeer(serverSide, message.capabilityMask());
             boolean firstServerHello = false;
-            if (!serverSide && session.markClientHelloSent()) {
+            if (!serverSide && (session.markClientHelloSent() || message.selectedCodecWireId < 0)) {
                 firstServerHello = true;
                 PacketCodecType proposal = message.selectedCodec();
                 if (proposal == null || !PacketCodecRegistry.isAvailable(proposal)

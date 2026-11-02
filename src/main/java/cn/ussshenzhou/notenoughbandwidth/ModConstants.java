@@ -12,7 +12,7 @@ public class ModConstants {
 
     public static final String HANDLER_EXPANDER = "neb_expander";
 
-    public static final int PROTOCOL_VERSION = 3;
+    public static final int PROTOCOL_VERSION = 4;
 
     public static final int DICTIONARY_CAPABILITY = 1 << 8;
 }

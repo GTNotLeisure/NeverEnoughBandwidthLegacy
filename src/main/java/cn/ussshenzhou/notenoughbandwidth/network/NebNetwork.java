@@ -1,5 +1,7 @@
 package cn.ussshenzhou.notenoughbandwidth.network;
 
+import java.util.concurrent.TimeUnit;
+
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.network.NetworkManager;
 import net.minecraft.server.MinecraftServer;
@@ -9,6 +11,8 @@ import cn.ussshenzhou.notenoughbandwidth.NebLog;
 import cn.ussshenzhou.notenoughbandwidth.NotEnoughBandwidth;
 import cn.ussshenzhou.notenoughbandwidth.codec.PacketCodecType;
 import cn.ussshenzhou.notenoughbandwidth.config.NebConfig;
+import cn.ussshenzhou.notenoughbandwidth.session.NebSession;
+import cn.ussshenzhou.notenoughbandwidth.session.NebSessionRegistry;
 import cpw.mods.fml.common.network.NetworkRegistry;
 import cpw.mods.fml.common.network.simpleimpl.MessageContext;
 import cpw.mods.fml.common.network.simpleimpl.SimpleNetworkWrapper;
@@ -19,6 +23,7 @@ public class NebNetwork {
     private static final int HELLO = 0;
     private static final int STAT_QUERY = 1;
     private static final int STAT_REPORT = 2;
+    private static final int MAX_HELLO_RETRIES = 10;
 
     private static SimpleNetworkWrapper channel;
 
@@ -56,6 +61,24 @@ public class NebNetwork {
         // The first hello only advertises capabilities. The selected backend is sent after the
         // client's reply, so neither side can switch frame formats before the peer is ready.
         sendHello(manager, "server");
+        NebSession session = NebSessionRegistry.of(manager);
+        if (session != null) {
+            retryHello(manager, session, MAX_HELLO_RETRIES);
+        }
+    }
+
+    private static void retryHello(NetworkManager manager, NebSession session, int remaining) {
+        session.channel()
+            .eventLoop()
+            .schedule(() -> {
+                if (remaining <= 0 || !manager.isChannelOpen() || session.negotiated()) {
+                    return;
+                }
+                // A proxy can drop replies while its backend bridge is still switching.
+                PacketCodecType selected = session.serverSelection();
+                sendHello(manager, "server", session.serverSelectionMatches(selected) ? selected : null);
+                retryHello(manager, session, remaining - 1);
+            }, 1, TimeUnit.SECONDS);
     }
 
     public static void queryServer() {

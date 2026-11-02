@@ -33,6 +33,7 @@ public class BandwidthDictionary {
     private static final int MAX_BUFFERED_BYTES = 1024 * 1024;
     private static final long MIN_DICTIONARY_TRAFFIC = 256L * 1024L;
     private static final long DICTIONARY_AMORTIZATION_FACTOR = 128L;
+    private static final int TRANSPORT_OVERHEAD_RESERVE_BYTES = 64;
     private static final long RETRAIN_NANOS = TimeUnit.SECONDS.toNanos(60);
     private static final int ENTROPY_SAMPLE_BYTES = 256;
     private static final int HIGH_ENTROPY_UNIQUE_BYTES = 144;
@@ -325,7 +326,7 @@ public class BandwidthDictionary {
 
     private static long estimateDictionaryWireBytes(int dictionaryBytes, int version) {
         int bodyBytes = 1 + NebVarInt.sizeOf(version) + NebVarInt.sizeOf(dictionaryBytes) + dictionaryBytes;
-        return (long) bodyBytes + NebVarInt.sizeOf(bodyBytes);
+        return (long) bodyBytes + NebVarInt.sizeOf(bodyBytes) + TRANSPORT_OVERHEAD_RESERVE_BYTES;
     }
 
     private static long safeAdd(long left, long right) {

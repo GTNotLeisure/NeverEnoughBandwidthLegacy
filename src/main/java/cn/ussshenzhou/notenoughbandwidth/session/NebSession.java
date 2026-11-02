@@ -41,6 +41,7 @@ public class NebSession {
     private volatile Snapshot inboundDictionary = BandwidthDictionary.EMPTY;
     private final CopyOnWriteArrayList<Runnable> negotiationListeners = new CopyOnWriteArrayList<>();
     private long dictionaryTraffic;
+    private volatile long peerGeneration;
 
     public NebSession(Channel channel) {
         this.channel = channel;
@@ -229,7 +230,8 @@ public class NebSession {
             }
             return;
         }
-        Runnable activation = () -> activateOutbound(type);
+        long generation = peerGeneration;
+        Runnable activation = () -> activateOutbound(type, generation);
         if (channel.eventLoop()
             .inEventLoop()) {
             activation.run();
@@ -277,6 +279,32 @@ public class NebSession {
         }
     }
 
+    public void resetPeer() {
+        if (released) {
+            return;
+        }
+        peerGeneration++;
+        outboundEnabled = false;
+        negotiated = false;
+        outboundType = PacketCodecType.STORED;
+        peerProtocolVersion = -1;
+        dictionaryCapable = false;
+        clientHelloSent = false;
+        serverSelectionSent = false;
+        serverSelection = PacketCodecType.STORED;
+        dictionaryTraffic = 0L;
+        dictionaryTrainer.reset();
+        closeOutboundCodec();
+        for (PacketCodec codec : inboundCodecs.values()) {
+            closeQuietly(codec);
+        }
+        inboundCodecs.clear();
+        outboundDictionary = BandwidthDictionary.EMPTY;
+        inboundDictionary = BandwidthDictionary.EMPTY;
+        channel.pipeline()
+            .fireUserEventTriggered(PeerReset.INSTANCE);
+    }
+
     public void release() {
         released = true;
         dictionaryTrainer.reset();
@@ -302,8 +330,10 @@ public class NebSession {
         }
     }
 
-    private void activateOutbound(PacketCodecType type) {
-        if (released || !channel.isActive() || (outboundEnabled && outboundType == type)) {
+    private void activateOutbound(PacketCodecType type, long generation) {
+        if (released || generation != peerGeneration
+            || !channel.isActive()
+            || (outboundEnabled && outboundType == type)) {
             return;
         }
         closeOutboundCodec();
@@ -353,5 +383,9 @@ public class NebSession {
                     listener.run();
                 }
             });
+    }
+
+    public enum PeerReset {
+        INSTANCE
     }
 }

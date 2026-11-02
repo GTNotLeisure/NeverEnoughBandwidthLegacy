@@ -47,14 +47,15 @@ public class NebConfig {
 
     @Config.Comment({ "CustomPayload channels that flush pending packets and bypass aggregation and compression.",
         "Use this for handshake, registration, proxy, or mod control channels that require immediate vanilla delivery.",
-        "The NEB negotiation channel is handled before compression and does not need to be listed." })
+        "NEB, Forge handshake/registration, BungeeCord, and MC| channels always bypass compression and do not need to be listed." })
     @Config.DefaultStringList({ "FML|HS", "REGISTER", "UNREGISTER", "MC|Brand" })
     @Config.RequiresMcRestart
     public static String[] unaggregatedChannels = { "FML|HS", "REGISTER", "UNREGISTER", "MC|Brand" };
 
     @Config.Comment({
         "Packet classes that stay on the vanilla path because they are latency sensitive or frequently change.",
-        "Names may be fully qualified or simple class names. The list is evaluated against the active packet registry on each connection." })
+        "Names may be fully qualified or simple class names. The list is evaluated against the active packet registry on each connection.",
+        "Proxy control packets and packets requiring entity ID rewriting always bypass compression." })
     @Config.DefaultStringList({ "S0CPacketSpawnPlayer", "S12PacketEntityVelocity", "S14PacketEntity",
         "S14PacketEntity$S15PacketEntityRelMove", "S18PacketEntityTeleport", "S0EPacketSpawnObject",
         "S13PacketDestroyEntities", "S23PacketBlockChange", "S02PacketChat", "S38PacketPlayerListItem",

@@ -19,6 +19,7 @@ import cn.ussshenzhou.notenoughbandwidth.codec.PacketCodecType;
 import cn.ussshenzhou.notenoughbandwidth.codec.zstd.BandwidthDictionary.Snapshot;
 import cn.ussshenzhou.notenoughbandwidth.config.NebConfig;
 import cn.ussshenzhou.notenoughbandwidth.session.NebSession;
+import cn.ussshenzhou.notenoughbandwidth.session.NebSession.PeerReset;
 import cn.ussshenzhou.notenoughbandwidth.stat.NebStats;
 import cn.ussshenzhou.notenoughbandwidth.stat.PacketKindResolver;
 import cn.ussshenzhou.notenoughbandwidth.util.ByteSize;
@@ -100,7 +101,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
                 .get();
             bypassPolicy.refresh(protocol);
             int payloadId = payloadLookup.idOf(protocol);
-            if (bypassPolicy.shouldBypass(body, payloadId)) {
+            if (payloadId == CustomPayloadLookup.UNRESOLVED || bypassPolicy.shouldBypass(body, payloadId)) {
                 emit(ctx);
                 profile(ctx, body);
                 int wireSize = body.readableBytes() + NebVarInt.sizeOf(body.readableBytes());
@@ -178,6 +179,23 @@ public class PacketAggregator extends ChannelDuplexHandler {
         releaseAccumulator();
         failPending(new ClosedChannelException());
         super.channelInactive(ctx);
+    }
+
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object event) throws Exception {
+        if (event == PeerReset.INSTANCE) {
+            cancelFlush();
+            releaseAccumulator();
+            for (ChannelPromise promise : pending) {
+                promise.cancel(false);
+            }
+            pending.clear();
+            channelIndex.clear();
+            pendingContextReset = false;
+            streamInputBytes = 0L;
+            streamWarm = false;
+        }
+        super.userEventTriggered(ctx, event);
     }
 
     private void scheduleFlush(ChannelHandlerContext ctx) {
@@ -260,7 +278,6 @@ public class PacketAggregator extends ChannelDuplexHandler {
         ByteBuf frame;
         ByteBuf indexed = null;
         ByteBuf dictionaryUpdate = null;
-        boolean dictionaryUpdateTransferred = false;
         int indexMark = channelIndex.mark();
         try {
             indexed = indexChannels(ctx, accumulator);
@@ -268,23 +285,23 @@ public class PacketAggregator extends ChannelDuplexHandler {
             Snapshot dictionary = session.nextOutboundDictionary();
             if (dictionary != null) {
                 dictionaryUpdate = DictionaryFrame.encode(ctx.alloc(), dictionary);
-                int wireSize = dictionaryUpdate.readableBytes() + NebVarInt.sizeOf(dictionaryUpdate.readableBytes());
+                int wireSize = PluginMessageFrame.wireSize(dictionaryUpdate.readableBytes(), outboundPayloadId(ctx));
                 session.installOutboundDictionary(dictionary);
                 streamWarm = false;
                 streamInputBytes = 0L;
                 record(0, wireSize, 0);
-                ChannelFuture dictionaryFuture = ctx.write(dictionaryUpdate);
-                dictionaryUpdateTransferred = true;
+                ChannelFuture dictionaryFuture = PluginMessageFrame
+                    .write(ctx, dictionaryUpdate, outboundPayloadId(ctx));
+                dictionaryUpdate.release();
+                dictionaryUpdate = null;
                 dictionaryFuture.addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
             }
-            frame = compressedFrame(ctx, type, compressionPayload);
+            frame = compressedFrame(ctx, type, compressionPayload, rawSize);
             if (frame != null) {
                 session.observeOutbound(compressionPayload);
             }
         } catch (Throwable t) {
-            if (!dictionaryUpdateTransferred) {
-                release(dictionaryUpdate);
-            }
+            release(dictionaryUpdate);
             channelIndex.rollback(indexMark);
             release(indexed);
             releaseAccumulator();
@@ -304,14 +321,26 @@ public class PacketAggregator extends ChannelDuplexHandler {
             return;
         }
 
-        int wireSize = frame.readableBytes() + NebVarInt.sizeOf(frame.readableBytes());
+        int wireSize = PluginMessageFrame.wireSize(frame.readableBytes(), outboundPayloadId(ctx));
         DatasetRecorder.global()
             .record(true, type, wireSize, packets, rawSize, indexed == null ? accumulator : indexed);
         release(indexed);
         releaseAccumulator();
         record(rawSize, wireSize, packets);
 
-        ChannelFuture future = ctx.write(frame);
+        ChannelFuture future;
+        try {
+            future = PluginMessageFrame.write(ctx, frame, outboundPayloadId(ctx));
+        } catch (Throwable failure) {
+            for (ChannelPromise promise : promises) {
+                promise.tryFailure(failure);
+            }
+            NebLog.error("Failed to write a frame for {}, closing the connection.", session.peerLabel(), failure);
+            ctx.close();
+            return;
+        } finally {
+            frame.release();
+        }
         future.addListener((ChannelFutureListener) completed -> {
             if (completed.isSuccess()) {
                 for (ChannelPromise promise : promises) {
@@ -383,7 +412,8 @@ public class PacketAggregator extends ChannelDuplexHandler {
         }
     }
 
-    private ByteBuf compressedFrame(ChannelHandlerContext ctx, PacketCodecType type, ByteBuf payload) {
+    private ByteBuf compressedFrame(ChannelHandlerContext ctx, PacketCodecType type, ByteBuf payload,
+        int originalSize) {
         int rawSize = payload.readableBytes();
         PacketCodec codec = session.outboundCodec();
         int bound = codec.compressBound(rawSize);
@@ -405,7 +435,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
             codec.compress(source, destination);
             frame.writerIndex(frame.writerIndex() + (destination.position() - before));
             int frameSize = frame.readableBytes();
-            expands = frameSize + NebVarInt.sizeOf(frameSize) >= rawSize;
+            expands = PluginMessageFrame.wireSize(frameSize, outboundPayloadId(ctx)) >= originalSize;
         } catch (Throwable t) {
             frame.release();
             throw t;
@@ -492,6 +522,13 @@ public class PacketAggregator extends ChannelDuplexHandler {
         if (buffer != null) {
             buffer.release();
         }
+    }
+
+    private int outboundPayloadId(ChannelHandlerContext ctx) {
+        return payloadLookup.idOf(
+            ctx.channel()
+                .attr(NetworkManager.attrKeySendable)
+                .get());
     }
 
     private void profile(ChannelHandlerContext ctx, ByteBuf body) {

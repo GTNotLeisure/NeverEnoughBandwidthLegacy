@@ -7,10 +7,6 @@ import java.util.Map;
 import java.util.Set;
 
 import net.minecraft.network.Packet;
-import net.minecraft.network.play.client.C00PacketKeepAlive;
-import net.minecraft.network.play.server.S00PacketKeepAlive;
-import net.minecraft.network.play.server.S07PacketRespawn;
-import net.minecraft.network.play.server.S40PacketDisconnect;
 
 import com.google.common.collect.BiMap;
 
@@ -54,13 +50,10 @@ public class PacketBypassPolicy {
         }
         resolvedProtocol = protocol;
         immediatePacketIds.clear();
-        addPacketId(protocol, S00PacketKeepAlive.class);
-        addPacketId(protocol, S40PacketDisconnect.class);
-        addPacketId(protocol, S07PacketRespawn.class);
-        addPacketId(protocol, C00PacketKeepAlive.class);
         for (Map.Entry<Integer, Class<? extends Packet>> entry : protocol.entrySet()) {
             Class<? extends Packet> packetType = entry.getValue();
-            if (packetType != null && matchesConfiguredType(packetType)) {
+            if (packetType != null
+                && (ProxyPacketPolicy.requiresVisibility(packetType) || matchesConfiguredType(packetType))) {
                 immediatePacketIds.add(entry.getKey());
             }
         }
@@ -76,15 +69,8 @@ public class PacketBypassPolicy {
             return true;
         }
         String channel = payloadLookup.channelOf(body, payloadId);
-        return channel != null && immediateChannels.contains(channel);
-    }
-
-    private void addPacketId(BiMap<Integer, Class<? extends Packet>> protocol, Class<? extends Packet> packetType) {
-        Integer id = protocol.inverse()
-            .get(packetType);
-        if (id != null) {
-            immediatePacketIds.add(id);
-        }
+        return channel != null
+            && (ProxyPacketPolicy.requiresVisibility(channel) || immediateChannels.contains(channel));
     }
 
     private boolean matchesConfiguredType(Class<? extends Packet> packetType) {

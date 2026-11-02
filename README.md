@@ -11,7 +11,7 @@ A network optimization mod for Minecraft 1.7.10, designed to improve multiplayer
 
 | GTNH Version | Mod Version | Status                 | Download                                                                                                                                |
 |--------------|-------------|------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| 2.9.0 RC2    | 1.0.0+      | ✅ Actively Maintained | [![Latest](https://img.shields.io/badge/Download-Latest-success)](https://github.com/ABKQPO/NeverEnoughBandwidthLegacy/releases/latest) |
+| 2.9.0+       | 1.0.3+      | ✅ Actively Maintained | [![Latest](https://img.shields.io/badge/Download-Latest-success)](https://github.com/ABKQPO/NeverEnoughBandwidthLegacy/releases/latest) |
 
 ## Traffic statistics screen
 
@@ -39,15 +39,16 @@ This 1–2 byte figure covers only the channel name replacement, not the entire 
 
 Combines small packets sent within a short interval and compresses them together to share compression overhead. The default aggregation window is 20 milliseconds; streaming codecs may hold very small batches longer to improve compression efficiency.
 
-Lifecycle hooks in `NetworkManager` and Forge's `NetworkDispatcher` install the pipeline. `PacketAggregator` collects packet bodies already encoded by vanilla's `MessageSerializer` and writes them into aggregate `NebFrame` frames. On receipt, `PacketExpander` runs after the `MessageDeserializer2` frame splitter, decompresses the data, restores channel names, and returns individual packet bodies to the vanilla packet decoder.
+Lifecycle hooks in `NetworkManager` and Forge's `NetworkDispatcher` install the pipeline. `PacketAggregator` collects packet bodies already encoded by vanilla's `MessageSerializer` and compresses them into aggregate `NebFrame` frames. `PluginMessageFrame` carries these frames and dictionary updates in standard `CustomPayload` packets on `NEB|Frame`. On receipt, `PacketExpander` runs after the `MessageDeserializer2` frame splitter, reassembles the carrier fragments, decompresses the data, restores channel names, and returns individual packet bodies to the vanilla packet decoder.
 
 > [!NOTE]
-> A regular compressed aggregate frame has the following structure; the second layout shows the subpackets before compression:
+> Each carrier contains a fragment of the NEB frame. The final layout shows the subpackets before compression:
 >
 > ```text
-> +---+---+---+-------------------------------------+
-> | S | H | R |          compressed data            |
-> +---+---+---+-------------------------------------+
+> | S | P | C | L | T | O | fragment |
+>
+> Reassembled NEB frame:
+> | H | R | compressed data |
 >
 >             +----+----+----+----+----+----+-----+
 >             | s0 | p0 | d0 | s1 | p1 | d1 | ... |
@@ -56,6 +57,10 @@ Lifecycle hooks in `NetworkManager` and Forge's `NetworkDispatcher` install the 
 > ```
 >
 > - `S`: VarInt, outer frame length, excluding `S` itself.
+> - `P`: The registered vanilla `CustomPayload` packet ID for this direction.
+> - `C`: VarInt byte length followed by the UTF-8 channel name `NEB|Frame`.
+> - `L`: Two-byte payload length, strictly below 32767; no extended Forge length is needed.
+> - `T`, `O`: VarInts for the total NEB frame size and this fragment's byte offset.
 > - `H`: 1 byte, containing the NEB marker, compression backend, and context reset flag.
 > - `R`: VarInt, aggregate data size before compression, after channel indexing has been applied.
 > - `s`: VarInt, total byte length of this subpacket's `p + d`.
@@ -128,6 +133,8 @@ Longer waits can improve small-packet compression at the cost of latency.
 ### unaggregatedChannels, unaggregatedPacketTypes
 
 Specifies channel names and packet class names that stay on the vanilla path, bypassing aggregation and compression. The default channels are `FML|HS`, `REGISTER`, `UNREGISTER`, and `MC|Brand`. Packet types accept fully qualified or simple class names; defaults include selected latency-sensitive entity, movement, and chat packets.
+
+The mandatory proxy-visible rules cannot be removed through these lists. `NEB`, `NEB|Frame`, `FML`, `FML|HS`, `REGISTER`, `UNREGISTER`, `BungeeCord`, and `MC|*` control channels always bypass compression.
 
 > [!NOTE]
 > Bypassed packets trigger a send of buffered data first to preserve ordering. Numerous or frequent bypasses reduce aggregation efficiency. Changing either list requires a restart.
