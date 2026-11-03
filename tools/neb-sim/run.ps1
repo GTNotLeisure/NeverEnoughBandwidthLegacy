@@ -36,7 +36,14 @@ function Find-Jar([string]$group, [string]$module, [string]$version) {
     return $jar.FullName
 }
 
-$netty = "4.1.109.Final"
+$nettyModulePath = Join-Path $modules "io.netty\netty-buffer"
+$netty = Get-ChildItem $nettyModulePath -Directory |
+    Where-Object { $_.Name -match '^4\.1\.\d+\.Final$' } |
+    Sort-Object { [int]($_.Name -replace '^4\.1\.(\d+)\.Final$', '$1') } -Descending |
+    Select-Object -First 1 -ExpandProperty Name
+if (-not $netty) {
+    throw "Missing a compatible io.netty:netty-buffer version in $nettyModulePath"
+}
 $jars = @(
     (Find-Jar "com.github.luben" "zstd-jni" "1.5.7-5"),
     (Find-Jar "io.netty" "netty-buffer" $netty),
@@ -48,8 +55,19 @@ $jars = @(
 )
 
 $log4j = Get-ChildItem (Join-Path $modules "org.apache.logging.log4j\log4j-api") -Recurse -Filter "log4j-api-*.jar" |
-    Sort-Object Name -Descending |
+    Sort-Object {
+        if ($_.Directory.Parent.Name -match '^(\d+\.\d+\.\d+)') {
+            [version]$Matches[1]
+        } else {
+            [version]"0.0.0"
+        }
+    } -Descending |
     Select-Object -First 1
+if (-not $log4j) {
+    $log4j = Get-ChildItem (Join-Path $GradleUserHome "caches") -Recurse -Filter "log4j-api-*.jar" -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending |
+        Select-Object -First 1
+}
 if ($log4j) {
     $jars += $log4j.FullName
 }

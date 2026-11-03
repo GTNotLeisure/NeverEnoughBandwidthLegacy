@@ -37,15 +37,17 @@ public class BandwidthDictionary {
     private static final long RETRAIN_NANOS = TimeUnit.SECONDS.toNanos(60);
     private static final int ENTROPY_SAMPLE_BYTES = 256;
     private static final int HIGH_ENTROPY_UNIQUE_BYTES = 144;
+    private static final int TRAINING_QUEUE_CAPACITY = 1;
     private static final ExecutorService TRAINER = new ThreadPoolExecutor(
         1,
         1,
         0L,
         TimeUnit.MILLISECONDS,
-        new ArrayBlockingQueue<>(8),
+        new ArrayBlockingQueue<>(TRAINING_QUEUE_CAPACITY),
         task -> {
             Thread thread = new Thread(task, "NEB Dictionary Trainer");
             thread.setDaemon(true);
+            thread.setPriority(Thread.MIN_PRIORITY);
             return thread;
         },
         new ThreadPoolExecutor.AbortPolicy());
@@ -138,6 +140,7 @@ public class BandwidthDictionary {
     }
 
     private void train(List<byte[]> corpus, long taskGeneration, PacketCodecType codecType) {
+        long startedNanos = System.nanoTime();
         try {
             List<byte[]> trainingSamples = new ArrayList<>();
             List<Integer> validationIndexes = new ArrayList<>();
@@ -191,6 +194,10 @@ public class BandwidthDictionary {
                     coolingDown = true;
                 }
             }
+            NebLog.debug(
+                "Bandwidth dictionary training for {} completed in {} ms.",
+                codecType.configName(),
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos));
         }
     }
 

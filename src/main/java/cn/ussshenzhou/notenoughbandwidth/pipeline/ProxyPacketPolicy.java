@@ -119,7 +119,8 @@ public class ProxyPacketPolicy {
     }
 
     public static boolean requiresVisibility(String channel) {
-        return channel != null && (VISIBLE_CHANNELS.contains(channel) || channel.startsWith("MC|"));
+        return channel != null
+            && (VISIBLE_CHANNELS.contains(channel) || channel.startsWith("MC|") || channel.startsWith("FML|"));
     }
 
     public static boolean resetsClientSession(ByteBuf packet, BiMap<Integer, Class<? extends Packet>> protocol,

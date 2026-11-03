@@ -46,11 +46,13 @@ public class NebConfig {
     public static int flushThresholdBytes = 262144;
 
     @Config.Comment({ "CustomPayload channels that flush pending packets and bypass aggregation and compression.",
-        "Use this for handshake, registration, proxy, or mod control channels that require immediate vanilla delivery.",
-        "NEB, Forge handshake/registration, BungeeCord, and MC| channels always bypass compression and do not need to be listed." })
-    @Config.DefaultStringList({ "FML|HS", "REGISTER", "UNREGISTER", "MC|Brand" })
+        "Minecraft MC| channels and Forge FML| channels always bypass compression.",
+        "The default list includes channels found in GT5-Unofficial." })
+    @Config.DefaultStringList({ "FML|HS", "REGISTER", "UNREGISTER", "MC|Brand", "GregTech", "DetravScanner",
+        "miscutils", "kubatech", "tectech" })
     @Config.RequiresMcRestart
-    public static String[] unaggregatedChannels = { "FML|HS", "REGISTER", "UNREGISTER", "MC|Brand" };
+    public static String[] unaggregatedChannels = { "FML|HS", "REGISTER", "UNREGISTER", "MC|Brand", "GregTech",
+        "DetravScanner", "miscutils", "kubatech", "tectech" };
 
     @Config.Comment({
         "Packet classes that stay on the vanilla path because they are latency sensitive or frequently change.",

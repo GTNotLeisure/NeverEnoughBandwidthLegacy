@@ -133,9 +133,9 @@ Forge 1.7.10 缺少新版 NeoForge 的统一 payload 类型与 codec 注册表�
 
 ### unaggregatedChannels、unaggregatedPacketTypes
 
-指定直接沿用原版路径、不参与聚合压缩的通道名称和包类名。默认绕过通道为 `FML|HS`、`REGISTER`、`UNREGISTER`、`MC|Brand`；包类型支持完整类名或简单类名，默认包含部分实体、移动、聊天等对延迟敏感的包。
+指定直接沿用原版路径、不参与聚合压缩的通道名称和包类名。所有 `MC|*` 和 `FML|*` 通道始终绕过。默认名单还包含 GT5-Unofficial 的 `GregTech`、`DetravScanner`、`miscutils`、`kubatech`、`tectech` 通道。包类型支持完整类名或简单类名，默认包含部分实体、移动、聊天等对延迟敏感的包。
 
-上述列表不能移除强制的代理可见规则。`NEB`、`NEB|Frame`、`FML`、`FML|HS`、`REGISTER`、`UNREGISTER`、`BungeeCord` 和 `MC|*` 控制通道始终绕过压缩。
+上述列表不能移除强制旁路规则。`NEB`、`NEB|Frame`、`FML`、`FML|*`、`REGISTER`、`UNREGISTER`、`BungeeCord` 和 `MC|*` 控制通道始终绕过压缩。
 
 > [!NOTE]
 > 绕过包会先触发缓冲内容发送，以保持顺序；绕过规则过多或命中频繁时，会降低聚合效率。修改这两个列表需要重启。

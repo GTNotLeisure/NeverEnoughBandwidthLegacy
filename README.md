@@ -133,9 +133,9 @@ Longer waits can improve small-packet compression at the cost of latency.
 
 ### unaggregatedChannels, unaggregatedPacketTypes
 
-Specifies channel names and packet class names that stay on the vanilla path, bypassing aggregation and compression. The default channels are `FML|HS`, `REGISTER`, `UNREGISTER`, and `MC|Brand`. Packet types accept fully qualified or simple class names; defaults include selected latency-sensitive entity, movement, and chat packets.
+Specifies channel names and packet class names that stay on the vanilla path, bypassing aggregation and compression. All `MC|*` and `FML|*` channels always bypass. The default list also includes the GT5-Unofficial channels `GregTech`, `DetravScanner`, `miscutils`, `kubatech`, and `tectech`. Packet types accept fully qualified or simple class names; defaults include selected latency-sensitive entity, movement, and chat packets.
 
-The mandatory proxy-visible rules cannot be removed through these lists. `NEB`, `NEB|Frame`, `FML`, `FML|HS`, `REGISTER`, `UNREGISTER`, `BungeeCord`, and `MC|*` control channels always bypass compression.
+The mandatory bypass rules cannot be removed through these lists. `NEB`, `NEB|Frame`, `FML`, `FML|*`, `REGISTER`, `UNREGISTER`, `BungeeCord`, and `MC|*` control channels always bypass compression.
 
 > [!NOTE]
 > Bypassed packets trigger a send of buffered data first to preserve ordering. Numerous or frequent bypasses reduce aggregation efficiency. Changing either list requires a restart.
