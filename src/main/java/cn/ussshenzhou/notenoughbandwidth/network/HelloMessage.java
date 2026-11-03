@@ -122,6 +122,7 @@ public class HelloMessage implements IMessage {
                     if (session
                         .markServerSelection(PacketCodecRegistry.negotiate(message.capabilityMask(), allowStateful))) {
                         agreed = session.serverSelection();
+                        session.enableInbound(agreed, message.protocolVersion());
                         NebNetwork.sendHello(manager, "server", agreed);
                         return null;
                     }
@@ -140,6 +141,7 @@ public class HelloMessage implements IMessage {
                     agreed = PacketCodecType.STORED;
                 }
             }
+            session.enableInbound(agreed, message.protocolVersion());
             if (!serverSide) {
                 NebNetwork.sendHello(manager, "client", agreed);
             }

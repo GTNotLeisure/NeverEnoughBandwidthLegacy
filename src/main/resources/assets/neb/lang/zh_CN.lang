@@ -7,6 +7,7 @@ neb.config.general.unaggregatedChannels=绕过聚合和压缩的 CustomPayload �
 neb.config.general.unaggregatedPacketTypes=保持原版路径的网络包类型
 neb.config.general.compressionThresholdBytes=压缩阈值（字节）
 neb.config.general.maxExpandedFrameBytes=解压后最大帧长（字节）
+neb.config.general.maxNegotiationPendingFrames=握手期间最大暂存帧数
 neb.config.general.zstdLevel=zstd 压缩等级
 neb.config.general.zstdWindowLog=zstd 窗口对数
 neb.config.general.enableBandwidthDictionary=训练 zstd 字典

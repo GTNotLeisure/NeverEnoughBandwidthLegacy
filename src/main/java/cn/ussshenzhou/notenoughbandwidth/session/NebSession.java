@@ -40,8 +40,11 @@ public class NebSession {
     private volatile Snapshot outboundDictionary = BandwidthDictionary.EMPTY;
     private volatile Snapshot inboundDictionary = BandwidthDictionary.EMPTY;
     private final CopyOnWriteArrayList<Runnable> negotiationListeners = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<Runnable> inboundReadyListeners = new CopyOnWriteArrayList<>();
     private long dictionaryTraffic;
     private volatile long peerGeneration;
+    private volatile boolean inboundEnabled;
+    private volatile PacketCodecType inboundType = PacketCodecType.STORED;
 
     public NebSession(Channel channel) {
         this.channel = channel;
@@ -78,6 +81,10 @@ public class NebSession {
         return negotiated;
     }
 
+    public boolean inboundEnabled() {
+        return inboundEnabled;
+    }
+
     public void whenNegotiated(Runnable listener) {
         if (listener == null) {
             return;
@@ -92,8 +99,26 @@ public class NebSession {
         negotiationListeners.remove(listener);
     }
 
+    public void whenInboundReady(Runnable listener) {
+        if (listener == null) {
+            return;
+        }
+        inboundReadyListeners.addIfAbsent(listener);
+        if (inboundEnabled) {
+            notifyInboundReady(listener);
+        }
+    }
+
+    public void removeInboundReadyListener(Runnable listener) {
+        inboundReadyListeners.remove(listener);
+    }
+
     public PacketCodecType outboundType() {
         return outboundType;
+    }
+
+    public PacketCodecType inboundType() {
+        return inboundType;
     }
 
     public int outboundDictionaryVersion() {
@@ -279,6 +304,25 @@ public class NebSession {
         }
     }
 
+    public void enableInbound(PacketCodecType type, int peerProtocol) {
+        if (type == null) {
+            throw new IllegalArgumentException("NEB: inbound codec must not be null");
+        }
+        if (released || !channel.isActive()) {
+            return;
+        }
+        peerProtocolVersion = peerProtocol;
+        long generation = peerGeneration;
+        Runnable activation = () -> activateInbound(type, generation);
+        if (channel.eventLoop()
+            .inEventLoop()) {
+            activation.run();
+        } else {
+            channel.eventLoop()
+                .execute(activation);
+        }
+    }
+
     public void resetPeer() {
         if (released) {
             return;
@@ -286,6 +330,8 @@ public class NebSession {
         peerGeneration++;
         outboundEnabled = false;
         negotiated = false;
+        inboundEnabled = false;
+        inboundType = PacketCodecType.STORED;
         outboundType = PacketCodecType.STORED;
         peerProtocolVersion = -1;
         dictionaryCapable = false;
@@ -315,7 +361,10 @@ public class NebSession {
         inboundCodecs.clear();
         outboundEnabled = false;
         negotiated = false;
+        inboundEnabled = false;
+        inboundType = PacketCodecType.STORED;
         negotiationListeners.clear();
+        inboundReadyListeners.clear();
         clientHelloSent = false;
         serverSelectionSent = false;
         serverSelection = PacketCodecType.STORED;
@@ -350,6 +399,27 @@ public class NebSession {
         }
     }
 
+    private void activateInbound(PacketCodecType type, long generation) {
+        if (released || generation != peerGeneration || !channel.isActive()) {
+            return;
+        }
+        if (inboundEnabled) {
+            if (inboundType != type) {
+                NebLog.warn(
+                    "Ignoring a late inbound codec switch for {} from {} to keep the compression stream aligned.",
+                    peerLabel,
+                    inboundType.configName(),
+                    type.configName());
+            }
+            return;
+        }
+        inboundType = type;
+        inboundEnabled = true;
+        for (Runnable listener : inboundReadyListeners) {
+            listener.run();
+        }
+    }
+
     private static void closeQuietly(PacketCodec codec) {
         if (codec == null) {
             return;
@@ -380,6 +450,15 @@ public class NebSession {
         channel.eventLoop()
             .execute(() -> {
                 if (!released && negotiated && negotiationListeners.contains(listener)) {
+                    listener.run();
+                }
+            });
+    }
+
+    private void notifyInboundReady(Runnable listener) {
+        channel.eventLoop()
+            .execute(() -> {
+                if (!released && inboundEnabled && inboundReadyListeners.contains(listener)) {
                     listener.run();
                 }
             });

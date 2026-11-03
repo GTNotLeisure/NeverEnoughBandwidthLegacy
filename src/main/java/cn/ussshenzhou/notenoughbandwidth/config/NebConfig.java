@@ -79,6 +79,12 @@ public class NebConfig {
     @Config.RangeInt(min = 1048576, max = 134217728)
     public static int maxExpandedFrameBytes = 16777216;
 
+    @Config.Comment({ "Maximum number of compressed carrier frames retained while a proxy connection is negotiating.",
+        "The byte limit remains 8 MiB; increase this only when a proxy delays the NEB handshake during server switching." })
+    @Config.DefaultInt(512)
+    @Config.RangeInt(min = 128, max = 8192)
+    public static int maxNegotiationPendingFrames = 512;
+
     @Config.Comment({ "zstd compression level. 1 is fastest, 19 is smallest; 3 is the zstd default." })
     @Config.DefaultInt(3)
     @Config.RangeInt(min = 1, max = 19)

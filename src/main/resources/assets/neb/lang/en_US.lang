@@ -7,6 +7,7 @@ neb.config.general.unaggregatedChannels=CustomPayload channels that bypass aggre
 neb.config.general.unaggregatedPacketTypes=Packet classes that stay on the vanilla path
 neb.config.general.compressionThresholdBytes=Compression threshold (bytes)
 neb.config.general.maxExpandedFrameBytes=Maximum expanded frame (bytes)
+neb.config.general.maxNegotiationPendingFrames=Maximum pending negotiation frames
 neb.config.general.zstdLevel=zstd level
 neb.config.general.zstdWindowLog=zstd window log
 neb.config.general.enableBandwidthDictionary=Train zstd dictionaries

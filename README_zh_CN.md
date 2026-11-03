@@ -122,13 +122,14 @@ Forge 1.7.10 缺少新版 NeoForge 的统一 payload 类型与 codec 注册表�
 
 较长等待有利于小包压缩，但会增加延迟。
 
-### flushThresholdBytes、compressionThresholdBytes、maxExpandedFrameBytes
+### flushThresholdBytes、compressionThresholdBytes、maxExpandedFrameBytes、maxNegotiationPendingFrames
 
 | 配置项                      | 默认值               | 说明                                                     |
 |-----------------------------|----------------------|----------------------------------------------------------|
 | `flushThresholdBytes`       | `262144`（256 KiB）  | 缓冲达到此大小时提前发送；聚合数据另有 1 MiB 硬上限。    |
 | `compressionThresholdBytes` | `64`                 | 独立帧低于此大小时不压缩；流压缩可在合并后尝试更小批次。 |
 | `maxExpandedFrameBytes`     | `16777216`（16 MiB） | 接收帧解压/还原大小上限，同时限制发送端聚合大小。        |
+| `maxNegotiationPendingFrames` | `512`                | 代理延迟握手完成前最多暂存的压缩载荷帧，范围 128~8192；另有独立的 8 MiB 暂存字节上限。 |
 
 ### unaggregatedChannels、unaggregatedPacketTypes
 

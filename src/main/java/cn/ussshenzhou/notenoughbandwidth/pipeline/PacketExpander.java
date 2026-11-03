@@ -32,7 +32,7 @@ import io.netty.handler.codec.MessageToMessageDecoder;
 
 public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
 
-    private static final int MAX_PENDING_FRAMES = 128;
+    private static final int MAX_PENDING_FRAMES_HARD_LIMIT = 8192;
     private static final long MAX_PENDING_BYTES = 4L * NebFrame.MAX_WIRE_BYTES;
 
     private final NebSession session;
@@ -41,7 +41,7 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
     private final CustomPayloadLookup payloadLookup = new CustomPayloadLookup();
     private final PluginMessageAssembler assembler = new PluginMessageAssembler();
     private final Deque<ByteBuf> pendingFrames = new ArrayDeque<>();
-    private Runnable negotiationListener;
+    private Runnable inboundReadyListener;
     private long pendingBytes;
 
     public PacketExpander(NebSession session) {
@@ -50,15 +50,15 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
 
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) {
-        negotiationListener = () -> drainPending(ctx);
-        session.whenNegotiated(negotiationListener);
+        inboundReadyListener = () -> drainPending(ctx);
+        session.whenInboundReady(inboundReadyListener);
     }
 
     @Override
     public void handlerRemoved(ChannelHandlerContext ctx) {
-        if (negotiationListener != null) {
-            session.removeNegotiationListener(negotiationListener);
-            negotiationListener = null;
+        if (inboundReadyListener != null) {
+            session.removeInboundReadyListener(inboundReadyListener);
+            inboundReadyListener = null;
         }
         releasePending();
         assembler.clear();
@@ -89,12 +89,12 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
         if (ProxyPacketPolicy.resetsClientSession(frame, protocol, payloadLookup)) {
             session.resetPeer();
         }
-        if (session.negotiated() && !pendingFrames.isEmpty()) {
+        if (session.inboundEnabled() && !pendingFrames.isEmpty()) {
             if (!drainPending(ctx)) {
                 return;
             }
         }
-        if (!session.negotiated()) {
+        if (!session.inboundEnabled()) {
             int wireSize = frame.readableBytes() + NebVarInt.sizeOf(frame.readableBytes());
             if (shouldDefer(ctx, frame)) {
                 defer(frame);
@@ -153,7 +153,8 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
 
     private void defer(ByteBuf frame) {
         long size = frame.readableBytes();
-        if (pendingFrames.size() >= MAX_PENDING_FRAMES || MAX_PENDING_BYTES - pendingBytes < size) {
+        int frameLimit = Math.max(128, Math.min(MAX_PENDING_FRAMES_HARD_LIMIT, NebConfig.maxNegotiationPendingFrames));
+        if (pendingFrames.size() >= frameLimit || MAX_PENDING_BYTES - pendingBytes < size) {
             throw new CorruptedFrameException("NEB: too many frames arrived before negotiation");
         }
         pendingFrames.addLast(frame.retain());
@@ -161,7 +162,7 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
     }
 
     private boolean drainPending(ChannelHandlerContext ctx) {
-        if (!session.negotiated() || pendingFrames.isEmpty()) {
+        if (!session.inboundEnabled() || pendingFrames.isEmpty()) {
             return true;
         }
         List<Object> expanded = new ArrayList<>();
@@ -207,6 +208,9 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
         PacketCodecType codecType = NebFrame.codecOf(header);
         if (codecType == null) {
             throw new CorruptedFrameException("NEB: frame header 0x" + Integer.toHexString(header) + " is unknown");
+        }
+        if (codecType != session.inboundType()) {
+            throw new CorruptedFrameException("NEB: received an unselected " + codecType.configName() + " frame");
         }
         if (NebFrame.resetsContext(header)) {
             session.resetInboundCodec(codecType);

@@ -122,13 +122,14 @@ Controls aggregation and small-packet waiting times, in milliseconds.
 
 Longer waits can improve small-packet compression at the cost of latency.
 
-### flushThresholdBytes, compressionThresholdBytes, maxExpandedFrameBytes
+### flushThresholdBytes, compressionThresholdBytes, maxExpandedFrameBytes, maxNegotiationPendingFrames
 
 | Option                      | Default             | Description                                                                                                           |
 |-----------------------------|---------------------|-----------------------------------------------------------------------------------------------------------------------|
 | `flushThresholdBytes`       | `262144` (256 KiB)  | Sends buffered data early once this size is reached; aggregate data also has a hard limit of 1 MiB.                   |
 | `compressionThresholdBytes` | `64`                | Independent frames below this size are not compressed; streaming codecs may attempt smaller batches after coalescing. |
 | `maxExpandedFrameBytes`     | `16777216` (16 MiB) | Limits the decompressed/restored size of received frames and also bounds outbound aggregation size.                   |
+| `maxNegotiationPendingFrames` | `512`             | Maximum compressed carrier frames retained while a proxy-delayed handshake completes, from 128 to 8192. The separate pending-byte limit remains 8 MiB. |
 
 ### unaggregatedChannels, unaggregatedPacketTypes
 
