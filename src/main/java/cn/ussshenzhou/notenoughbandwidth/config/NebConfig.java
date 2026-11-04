@@ -46,13 +46,14 @@ public class NebConfig {
     public static int flushThresholdBytes = 262144;
 
     @Config.Comment({ "CustomPayload channels that flush pending packets and bypass aggregation and compression.",
-        "Minecraft MC| channels and Forge FML| channels always bypass compression.",
-        "The default list includes channels found in GT5-Unofficial." })
+        "Minecraft MC| channels and Forge FML| channels always bypass compression." })
     @Config.DefaultStringList({ "FML|HS", "REGISTER", "UNREGISTER", "MC|Brand", "GregTech", "DetravScanner",
-        "miscutils", "kubatech", "tectech" })
+        "miscutils", "kubatech", "tectech", "BloodMagic", "StorageDrawers", "BC-CORE", "OpenMods|M", "BQ_NET_CHAN",
+        "VM_NET_CHAN", "GalacticraftCore", "vnChannel", "AE2" })
     @Config.RequiresMcRestart
     public static String[] unaggregatedChannels = { "FML|HS", "REGISTER", "UNREGISTER", "MC|Brand", "GregTech",
-        "DetravScanner", "miscutils", "kubatech", "tectech" };
+        "DetravScanner", "miscutils", "kubatech", "tectech", "BloodMagic", "StorageDrawers", "BC-CORE", "OpenMods|M",
+        "BQ_NET_CHAN", "VM_NET_CHAN", "GalacticraftCore", "vnChannel", "AE2" };
 
     @Config.Comment({
         "Packet classes that stay on the vanilla path because they are latency sensitive or frequently change.",
@@ -62,13 +63,15 @@ public class NebConfig {
         "S14PacketEntity$S15PacketEntityRelMove", "S18PacketEntityTeleport", "S0EPacketSpawnObject",
         "S13PacketDestroyEntities", "S23PacketBlockChange", "S02PacketChat", "S38PacketPlayerListItem",
         "S07PacketRespawn", "S08PacketPlayerPosLook", "S06PacketUpdateHealth", "S1EPacketEntityDisplace",
-        "S44PacketWorldBorder" })
+        "S44PacketWorldBorder", "S1DPacketEntityEffect", "S22PacketMultiBlockChange", "S00PacketServerInfo",
+        "S20PacketEntityProperties" })
     @Config.RequiresMcRestart
     public static String[] unaggregatedPacketTypes = { "S0CPacketSpawnPlayer", "S12PacketEntityVelocity",
         "S14PacketEntity", "S14PacketEntity$S15PacketEntityRelMove", "S18PacketEntityTeleport", "S0EPacketSpawnObject",
         "S13PacketDestroyEntities", "S23PacketBlockChange", "S02PacketChat", "S38PacketPlayerListItem",
         "S07PacketRespawn", "S08PacketPlayerPosLook", "S06PacketUpdateHealth", "S1EPacketEntityDisplace",
-        "S44PacketWorldBorder" };
+        "S44PacketWorldBorder", "S1DPacketEntityEffect", "S22PacketMultiBlockChange", "S00PacketServerInfo",
+        "S20PacketEntityProperties" };
 
     @Config.Comment({
         "Independent frames smaller than this are sent uncompressed; stateful streams may probe smaller batches after adaptive coalescing." })
