@@ -48,6 +48,9 @@ public class PacketAggregator extends ChannelDuplexHandler {
         Arrays.asList(NebConfig.unaggregatedPacketTypes),
         payloadLookup);
     private final List<ChannelPromise> pending = new ArrayList<>();
+    private final ReusableDirectBuffer spareAccumulator = new ReusableDirectBuffer();
+    private final ReusableDirectBuffer spareIndexed = new ReusableDirectBuffer();
+    private final ReusableDirectBuffer spareFrame = new ReusableDirectBuffer();
 
     private ByteBuf accumulator;
     private int packetCount;
@@ -169,6 +172,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
         cancelFlush();
         flushTask = null;
         releaseAccumulator();
+        closeSpares();
         failPending(new ClosedChannelException());
     }
 
@@ -177,6 +181,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
         removed = true;
         cancelFlush();
         releaseAccumulator();
+        closeSpares();
         failPending(new ClosedChannelException());
         super.channelInactive(ctx);
     }
@@ -249,8 +254,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
 
     private ByteBuf accumulator(ChannelHandlerContext ctx) {
         if (accumulator == null) {
-            accumulator = ctx.alloc()
-                .directBuffer(INITIAL_CAPACITY);
+            accumulator = spareAccumulator.take(ctx.alloc(), INITIAL_CAPACITY);
             packetCount = 0;
             accumulatorStartedNanos = System.nanoTime();
         }
@@ -303,7 +307,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
         } catch (Throwable t) {
             release(dictionaryUpdate);
             channelIndex.rollback(indexMark);
-            release(indexed);
+            spareIndexed.give(indexed);
             releaseAccumulator();
             failPending(t);
             for (ChannelPromise promise : promises) {
@@ -316,7 +320,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
         if (frame == null) {
             // The peer never saw the definitions this attempt would have introduced.
             channelIndex.rollback(indexMark);
-            release(indexed);
+            spareIndexed.give(indexed);
             emitPlain(ctx, promises, rawSize, packets);
             return;
         }
@@ -324,7 +328,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
         int wireSize = PluginMessageFrame.wireSize(frame.readableBytes(), outboundPayloadId(ctx));
         DatasetRecorder.global()
             .record(true, type, wireSize, packets, rawSize, indexed == null ? accumulator : indexed);
-        release(indexed);
+        spareIndexed.give(indexed);
         releaseAccumulator();
         record(rawSize, wireSize, packets);
 
@@ -356,9 +360,11 @@ public class PacketAggregator extends ChannelDuplexHandler {
     }
 
     private void emitPlain(ChannelHandlerContext ctx, List<ChannelPromise> promises, int rawSize, int packets) {
-        ByteBuf raw = accumulator;
-        accumulator = null;
-        accumulatorStartedNanos = 0L;
+        // The packets are written as slices, so they get a buffer of their own instead of the reused one.
+        ByteBuf raw = ctx.alloc()
+            .heapBuffer(rawSize, rawSize);
+        raw.writeBytes(accumulator, accumulator.readerIndex(), rawSize);
+        releaseAccumulator();
         try {
             int index = 0;
             while (raw.isReadable()) {
@@ -422,25 +428,29 @@ public class PacketAggregator extends ChannelDuplexHandler {
             throw new IllegalStateException("NEB: codec bound exceeds Minecraft's frame length limit");
         }
         boolean resetContext = pendingContextReset;
-        ByteBuf frame = ctx.alloc()
-            .directBuffer(headerSize + bound);
-        boolean expands;
+        // The codec writes into a reused direct buffer. The frame handed on is a heap copy of the result.
+        ByteBuf scratch = spareFrame.take(ctx.alloc(), headerSize + bound);
+        ByteBuf frame = null;
         try {
-            frame.writeByte(NebFrame.header(type, resetContext));
-            NebVarInt.write(frame, rawSize);
+            scratch.writeByte(NebFrame.header(type, resetContext));
+            NebVarInt.write(scratch, rawSize);
             ByteBuffer source = payload.nioBuffer();
-            ByteBuffer destination = frame.nioBuffer(frame.writerIndex(), bound);
+            ByteBuffer destination = scratch.nioBuffer(scratch.writerIndex(), bound);
             // Measure the bytes written from the view's initial position.
             int before = destination.position();
             codec.compress(source, destination);
-            frame.writerIndex(frame.writerIndex() + (destination.position() - before));
-            int frameSize = frame.readableBytes();
-            expands = PluginMessageFrame.wireSize(frameSize, outboundPayloadId(ctx)) >= originalSize;
-        } catch (Throwable t) {
-            frame.release();
-            throw t;
+            scratch.writerIndex(scratch.writerIndex() + (destination.position() - before));
+            int frameSize = scratch.readableBytes();
+            boolean expands = PluginMessageFrame.wireSize(frameSize, outboundPayloadId(ctx)) >= originalSize;
+            if (!expands || (type.stateful() && streamWarm)) {
+                frame = ctx.alloc()
+                    .heapBuffer(frameSize, frameSize);
+                frame.writeBytes(scratch);
+            }
+        } finally {
+            spareFrame.give(scratch);
         }
-        if (!expands || (type.stateful() && streamWarm)) {
+        if (frame != null) {
             pendingContextReset = false;
             streamInputBytes = Math.min(Long.MAX_VALUE - rawSize, streamInputBytes) + rawSize;
             if (streamInputBytes >= COLD_STREAM_BYTES) {
@@ -448,7 +458,6 @@ public class PacketAggregator extends ChannelDuplexHandler {
             }
             return frame;
         }
-        frame.release();
         // Reset state after a stateful frame that did not compress.
         if (type.stateful()) {
             session.resetOutboundCodec();
@@ -468,8 +477,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
         if (payloadId == CustomPayloadLookup.UNRESOLVED || !carriesCustomPayload(payload, payloadId)) {
             return null;
         }
-        ByteBuf result = ctx.alloc()
-            .directBuffer(payload.readableBytes() + 16);
+        ByteBuf result = spareIndexed.take(ctx.alloc(), payload.readableBytes() + 16);
         try {
             ByteBuf view = payload.duplicate();
             while (view.isReadable()) {
@@ -490,7 +498,7 @@ public class PacketAggregator extends ChannelDuplexHandler {
             }
             return result;
         } catch (Throwable failure) {
-            result.release();
+            spareIndexed.give(result);
             throw failure;
         }
     }
@@ -544,11 +552,17 @@ public class PacketAggregator extends ChannelDuplexHandler {
 
     private void releaseAccumulator() {
         if (accumulator != null) {
-            accumulator.release();
+            spareAccumulator.give(accumulator);
             accumulator = null;
         }
         packetCount = 0;
         accumulatorStartedNanos = 0L;
+    }
+
+    private void closeSpares() {
+        spareAccumulator.close();
+        spareIndexed.close();
+        spareFrame.close();
     }
 
     private void failPending(Throwable cause) {

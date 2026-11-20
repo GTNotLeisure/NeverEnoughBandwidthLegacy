@@ -41,6 +41,8 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
     private final CustomPayloadLookup payloadLookup = new CustomPayloadLookup();
     private final PluginMessageAssembler assembler = new PluginMessageAssembler();
     private final Deque<ByteBuf> pendingFrames = new ArrayDeque<>();
+    private final ReusableDirectBuffer spareSource = new ReusableDirectBuffer();
+    private final ReusableDirectBuffer spareExpanded = new ReusableDirectBuffer();
     private Runnable inboundReadyListener;
     private long pendingBytes;
 
@@ -62,12 +64,14 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
         }
         releasePending();
         assembler.clear();
+        closeSpares();
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         releasePending();
         assembler.clear();
+        closeSpares();
         super.channelInactive(ctx);
     }
 
@@ -268,36 +272,46 @@ public class PacketExpander extends MessageToMessageDecoder<ByteBuf> {
             throw new DecoderException(
                 "NEB: peer sent a " + codecType.configName() + " frame but this side cannot decode it");
         }
-        ByteBuf raw;
         PacketCodec codec = session.inboundCodec(codecType);
-        ByteBuf source = codec.requiresDirectBuffers() && !frame.isDirect() ? toDirect(ctx, frame) : frame.retain();
-        raw = ctx.alloc()
-            .directBuffer(rawSize, rawSize);
+        boolean copied = codec.requiresDirectBuffers() && !frame.isDirect();
+        ByteBuf source = copied ? toDirect(ctx, frame) : frame.retain();
+        // The codec writes into a reused direct buffer. The packets are handed on as slices of a heap copy.
+        ByteBuf scratch = spareExpanded.take(ctx.alloc(), rawSize);
         try {
             ByteBuffer from = source.nioBuffer();
-            ByteBuffer to = raw.nioBuffer(raw.writerIndex(), rawSize);
+            ByteBuffer to = scratch.nioBuffer(0, rawSize);
             // Measure the codec output from the view's initial position.
             int before = to.position();
             codec.decompress(from, to);
             if (to.position() - before != rawSize) {
                 throw new CorruptedFrameException("NEB: expanded frame does not match its declared size");
             }
-            raw.writerIndex(raw.writerIndex() + (to.position() - before));
+            ByteBuf raw = ctx.alloc()
+                .heapBuffer(rawSize, rawSize);
+            raw.writeBytes(scratch, 0, rawSize);
+            return raw;
         } catch (Throwable t) {
-            raw.release();
             throw t instanceof DecoderException ? (DecoderException) t
                 : new DecoderException("NEB: failed to expand a " + codecType.configName() + " frame", t);
         } finally {
-            source.release();
+            spareExpanded.give(scratch);
+            if (copied) {
+                spareSource.give(source);
+            } else {
+                source.release();
+            }
         }
-        return raw;
     }
 
     private ByteBuf toDirect(ChannelHandlerContext ctx, ByteBuf frame) {
-        ByteBuf direct = ctx.alloc()
-            .directBuffer(frame.readableBytes());
+        ByteBuf direct = spareSource.take(ctx.alloc(), frame.readableBytes());
         direct.writeBytes(frame, frame.readerIndex(), frame.readableBytes());
         return direct;
+    }
+
+    private void closeSpares() {
+        spareSource.close();
+        spareExpanded.close();
     }
 
     private SplitResult split(ChannelHandlerContext ctx, ByteBuf raw, List<Object> out) {

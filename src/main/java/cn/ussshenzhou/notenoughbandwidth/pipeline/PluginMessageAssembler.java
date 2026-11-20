@@ -40,7 +40,7 @@ public class PluginMessageAssembler {
                 if (size == total) {
                     return new DecodedFrame(view.retain(), wireSize(packet));
                 }
-                pending = allocator.directBuffer(total, total);
+                pending = allocator.heapBuffer(total, total);
                 expectedSize = total;
             } else if (total != expectedSize || offset != pending.writerIndex()) {
                 throw new CorruptedFrameException("NEB: out of order plugin message fragment");
